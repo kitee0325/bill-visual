@@ -1,3 +1,4 @@
+import type { EChartsOption } from 'echarts';
 import { type CategoryDiff } from '../handleData';
 import {
   createBasePolarOption,
@@ -118,26 +119,38 @@ export function getInnerOption(
   const incomeData = getData(income);
   const expenseData = getData(expense);
 
+  if (incomeData.category.length === 0 && expenseData.category.length === 0) {
+    return {};
+  }
+
   const extend = getNiceMinMax([
     ...incomeData.rawValue,
     ...expenseData.rawValue,
   ]);
-  const incomeOption = getInnerPolarOption(
-    incomeData,
-    {
-      extend,
-      colorMap,
-    },
-    true
-  );
-  const expenseOption = getInnerPolarOption(
-    expenseData,
-    {
-      extend,
-      colorMap,
-    },
-    false
-  );
+
+  let incomeOption: EChartsOption | null = null;
+  if (incomeData.category.length > 0) {
+    incomeOption = getInnerPolarOption(
+      incomeData,
+      {
+        extend,
+        colorMap,
+      },
+      true
+    );
+  }
+
+  let expenseOption: EChartsOption | null = null;
+  if (expenseData.category.length > 0) {
+    expenseOption = getInnerPolarOption(
+      expenseData,
+      {
+        extend,
+        colorMap,
+      },
+      false
+    );
+  }
 
   // @ts-ignore
   return mergeObjectArrays(incomeOption, expenseOption);

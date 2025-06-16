@@ -1,3 +1,4 @@
+import type { EChartsOption } from 'echarts';
 import { type BillRecord } from '../handleData';
 import {
   createOuterBaseOption,
@@ -68,23 +69,36 @@ export function getOuterOption(
   const expenseRecords = records.filter(
     (record) => record.incomeOrExpense === '支出'
   );
-  const incomeMap = createIdMap(incomeRecords);
-  const expenseMap = createIdMap(expenseRecords);
-  const incomeData = cleanData(incomeRecords);
-  const expenseData = cleanData(expenseRecords);
 
-  const incomeOption = getOuterPolarOption(incomeData, {
-    isIncome: true,
-    colorMap,
-    idMap: incomeMap,
-    categoryRank: categoryRank.income,
-  });
-  const expenseOption = getOuterPolarOption(expenseData, {
-    isIncome: false,
-    colorMap,
-    idMap: expenseMap,
-    categoryRank: categoryRank.expense,
-  });
+  if (incomeRecords.length === 0 && expenseRecords.length === 0) {
+    return {};
+  }
+
+  let incomeOption: EChartsOption | null = {};
+  let expenseOption: EChartsOption | null = {};
+
+  if (incomeRecords.length > 0) {
+    const incomeMap = createIdMap(incomeRecords);
+    const incomeData = cleanData(incomeRecords);
+    incomeOption = getOuterPolarOption(incomeData, {
+      isIncome: true,
+      colorMap,
+      idMap: incomeMap,
+      categoryRank: categoryRank.income,
+    });
+  }
+
+  if (expenseRecords.length > 0) {
+    const expenseMap = createIdMap(expenseRecords);
+    const expenseData = cleanData(expenseRecords);
+
+    expenseOption = getOuterPolarOption(expenseData, {
+      isIncome: false,
+      colorMap,
+      idMap: expenseMap,
+      categoryRank: categoryRank.expense,
+    });
+  }
 
   // @ts-ignore
   return mergeObjectArrays(incomeOption, expenseOption);

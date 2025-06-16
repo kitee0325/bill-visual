@@ -21,8 +21,6 @@ export function getChartOption(
   const innerOption = getInnerOption(categoryDiff, colorMap);
   const outerOption = getOuterOption(records, { categoryRank, colorMap });
 
-  console.log(outerOption);
-
   // @ts-ignore
   return mergeObjectArrays(innerOption, outerOption);
 }
