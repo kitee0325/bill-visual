@@ -23,9 +23,10 @@ export interface BillRecord {
   merchantOrderId: number;
   // 备注
   remark: string;
+  [key: string]: any;
 }
 
-export type CategoryStatisticsDiff = Record<
+export type CategoryDiff = Record<
   string,
   Record<'increase' | 'decrease' | 'value', number>
 >;
@@ -36,6 +37,7 @@ export type CategoryStatisticsDiff = Record<
  * @returns
  */
 function excelDateToJSDate(serial: number | string) {
+  // 异常值处理，部分日期不是严格的excel数字，而是'2025-01-01 00:00:00'这种格式
   if (typeof serial === 'string') {
     return new Date(serial);
   }
@@ -108,6 +110,7 @@ export function parseBillData(data: any[][]): BillRecord[] {
     }
 
     const record: BillRecord = {
+      id: crypto.randomUUID(),
       tradeTime: excelDateToJSDate(tradeTime),
       tradeCategory: tradeCategory,
       counterparty: counterparty,
@@ -132,7 +135,7 @@ export function parseBillData(data: any[][]): BillRecord[] {
 }
 
 export function groupDataByMonth(records: BillRecord[]) {
-  let monthStatistics: BillRecord[][] = [];
+  const monthStatistics: Record<string, BillRecord[]> = {};
   records.forEach((record) => {
     const month = record.tradeTime.getMonth() + 1;
     if (!monthStatistics[month]) {
@@ -140,33 +143,59 @@ export function groupDataByMonth(records: BillRecord[]) {
     }
     monthStatistics[month].push(record);
   });
-  // 过滤没有数据的月份
-  monthStatistics = monthStatistics.filter((month) => month.length > 0);
 
   return monthStatistics;
 }
 
-// 统计收入和支出的类别
-export function getCategories(records: BillRecord[]) {
-  let incomeCategories: string[] = [];
-  let expenseCategories: string[] = [];
+// 统计收入和支出类别的总金额，并按金额从大到小排序，返回类别名称数组
+export function getSortedCategoriesByAmount(records: BillRecord[]) {
+  const incomeMap: Record<string, number> = {};
+  const expenseMap: Record<string, number> = {};
 
   records.forEach((record) => {
+    const category = record.tradeCategory;
     if (record.incomeOrExpense === '收入') {
-      incomeCategories.push(record.tradeCategory);
-    } else {
-      expenseCategories.push(record.tradeCategory);
+      incomeMap[category] = (incomeMap[category] || 0) + record.amount;
+    } else if (record.incomeOrExpense === '支出') {
+      expenseMap[category] = (expenseMap[category] || 0) + record.amount;
     }
   });
 
-  // 去重
-  incomeCategories = [...new Set(incomeCategories)];
-  expenseCategories = [...new Set(expenseCategories)];
+  const income = Object.entries(incomeMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([category]) => category);
+  const expense = Object.entries(expenseMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([category]) => category);
 
-  return {
-    incomeCategories,
-    expenseCategories,
-  };
+  return { income, expense };
+}
+
+// 类别颜色映射
+export function getCategoryColorMap(categories: {
+  income: string[];
+  expense: string[];
+}) {
+  const palette = [
+    '#72adff',
+    '#bf98ff',
+    '#ff80c8',
+    '#ff8b69',
+    '#629f00',
+    '#94b81f',
+    '#00c292',
+    '#00bcd7',
+  ];
+
+  const { income, expense } = categories;
+  const categoryColorMap: Record<string, string> = {};
+  income.forEach((category, index) => {
+    categoryColorMap[category] = palette[index % palette.length];
+  });
+  expense.forEach((category, index) => {
+    categoryColorMap[category] = palette[index % palette.length];
+  });
+  return categoryColorMap;
 }
 
 /**
@@ -174,31 +203,36 @@ export function getCategories(records: BillRecord[]) {
  * @param records
  * @returns
  */
-export function getCategoriesStatistics(
-  records: BillRecord[][],
-  categories: { incomeCategories: string[]; expenseCategories: string[] }
+export function getCategoriesDiff(
+  records: Record<string, BillRecord[]>,
+  categories: { income: string[]; expense: string[] }
 ) {
   const incomeStatistics: Record<string, number>[] = [];
   const expenseStatistics: Record<string, number>[] = [];
-  const { incomeCategories, expenseCategories } = categories;
+  const { income, expense } = categories;
 
-  records.forEach((monthRecords) => {
-    const monthIncomeStatistics: Record<string, number> =
-      incomeCategories.reduce((acc, d) => {
+  Object.values(records).forEach((monthRecords) => {
+    const monthIncomeStatistics: Record<string, number> = income.reduce(
+      (acc, d) => {
         acc[d] = 0;
         return acc;
-      }, {} as Record<string, number>);
-    const monthExpenseStatistics: Record<string, number> =
-      expenseCategories.reduce((acc, d) => {
+      },
+      {} as Record<string, number>
+    );
+    const monthExpenseStatistics: Record<string, number> = expense.reduce(
+      (acc, d) => {
         acc[d] = 0;
         return acc;
-      }, {} as Record<string, number>);
+      },
+      {} as Record<string, number>
+    );
 
     monthRecords.forEach((record) => {
+      const category = record.tradeCategory;
       if (record.incomeOrExpense === '收入') {
-        monthIncomeStatistics[record.tradeCategory] = record.amount;
+        monthIncomeStatistics[category] = record.amount;
       } else {
-        monthExpenseStatistics[record.tradeCategory] = record.amount;
+        monthExpenseStatistics[category] = record.amount;
       }
     });
 
@@ -207,29 +241,60 @@ export function getCategoriesStatistics(
   });
 
   // 计算环差
-  function calculateDiff(
-    statistics: Record<string, number>[]
-  ): CategoryStatisticsDiff[] {
+  function calculateDiff(statistics: Record<string, number>[]): CategoryDiff[] {
     return statistics.map((monthData, i) => {
       return Object.keys(monthData).reduce((acc, d) => {
-        const diff = statistics[i - 1]
-          ? Number((monthData[d] - statistics[i - 1][d]).toFixed(2))
-          : 0;
+        const lastValue = statistics[i - 1] ? statistics[i - 1][d] : 0;
+        let diff =
+          lastValue === 0 ? 0 : Number((monthData[d] - lastValue).toFixed(2));
+
+        // 如果差值小于10元或差值占值的比例小于5%，则认为差值为0
+        if (diff < 10 || diff / monthData[d] < 0.05) {
+          diff = 0;
+        }
+
         acc[d] = {
           increase: diff > 0 ? diff : 0,
           decrease: diff < 0 ? -diff : 0,
-          value: monthData[d] - diff,
+          value:
+            diff > 0 ? Number((monthData[d] - diff).toFixed(2)) : monthData[d],
         };
         return acc;
-      }, {} as CategoryStatisticsDiff);
+      }, {} as CategoryDiff);
     });
   }
 
-  const incomeStatisticsDiff = calculateDiff(incomeStatistics);
-  const expenseStatisticsDiff = calculateDiff(expenseStatistics);
+  const incomeDiff = calculateDiff(incomeStatistics);
+  const expenseDiff = calculateDiff(expenseStatistics);
+
+  const result = [];
+  for (let i = 0; i < incomeDiff.length; i++) {
+    result.push({
+      income: incomeDiff[i],
+      expense: expenseDiff[i],
+    });
+  }
+
+  return result;
+}
+
+export function processBillData(billData: any[][]) {
+  // 全周期数据处理
+  const records = parseBillData(billData);
+  // 类别统计
+  const categoryRank = getSortedCategoriesByAmount(records);
+  // 类别颜色映射
+  const colorMap = getCategoryColorMap(categoryRank);
+  // 数据分期
+  const monthStatistics = groupDataByMonth(records);
+  // 计算环差
+  const categoryDiff = getCategoriesDiff(monthStatistics, categoryRank);
 
   return {
-    incomeStatisticsDiff,
-    expenseStatisticsDiff,
+    records,
+    monthStatistics,
+    categoryRank,
+    colorMap,
+    categoryDiff,
   };
 }

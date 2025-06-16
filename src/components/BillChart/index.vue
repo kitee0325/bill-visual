@@ -1,45 +1,41 @@
 <script setup lang="ts">
-import {
-  parseBillData,
-  getCategoriesStatistics,
-  groupDataByMonth,
-  getCategories,
-} from './handleData';
-import { getChartOption } from './chartOption';
 import * as echarts from 'echarts';
 import { ref, onMounted, onUnmounted } from 'vue';
 
+import { processBillData } from './handleData';
+import { getChartOption } from './chartOption';
+
 const props = defineProps<{ billData: any[][] }>();
+const { monthStatistics, colorMap, categoryRank, categoryDiff } =
+  processBillData(props.billData);
 
-// 全周期的数据处理
-const records = parseBillData(props.billData);
-const { incomeCategories, expenseCategories } = getCategories(records);
-const monthStatistics = groupDataByMonth(records);
-const { incomeStatisticsDiff, expenseStatisticsDiff } = getCategoriesStatistics(
-  monthStatistics,
-  {
-    incomeCategories,
-    expenseCategories,
-  }
-);
-
-const month = ref(monthStatistics[0][0].tradeTime.getMonth() + 5);
+let isInit = false;
+const monthList = Object.keys(monthStatistics);
+const month = ref(monthList[0]);
 
 const chartRef = ref<HTMLDivElement | null>(null);
-const chartOption = getChartOption(monthStatistics[month.value - 1], {
-  income: incomeStatisticsDiff[month.value - 1],
-  expense: expenseStatisticsDiff[month.value - 1],
-});
+
 let chartInstance: echarts.ECharts | null = null;
 
-function initChart() {
-  if (!chartRef.value) return;
-  chartInstance = echarts.init(chartRef.value);
-  chartInstance.setOption(chartOption);
+function updateChart() {
+  if (!isInit) {
+    if (!chartRef.value) return;
+    chartInstance = echarts.init(chartRef.value);
+    isInit = true;
+  }
+  const chartOption = getChartOption(
+    monthStatistics[month.value],
+    categoryDiff[Number(month.value)],
+    {
+      colorMap,
+      categoryRank,
+    }
+  );
+  chartInstance!.setOption(chartOption);
 }
 
 onMounted(() => {
-  initChart();
+  updateChart();
 });
 
 onUnmounted(() => {
