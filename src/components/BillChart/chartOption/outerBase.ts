@@ -1,19 +1,37 @@
-import { type EChartsOption, type LineSeriesOption } from 'echarts';
+import {
+  type EChartsOption,
+  type LineSeriesOption,
+  type ScatterSeriesOption,
+} from 'echarts';
+import type { AngleAxisOption } from 'echarts/types/dist/shared';
 import type { OuterData } from './outer';
-import type { BillRecord } from '../handleData';
-import { getMonthDaysArray, formatDate } from './util';
+import type { BillRecord, TradeMinMax } from '../handleData';
+import { getMonthDaysArray, formatDate, getMonthRange } from './util';
 
-export interface OuterChartOptions {
+export interface OuterScatterChartOptions {
   isIncome: boolean;
   idMap: Record<string, BillRecord>;
+
   colorMap: Record<string, string>;
+
+  tradeMinMax: TradeMinMax;
+}
+
+export interface OuterStackLineChartOptions {
+  isIncome: boolean;
+  colorMap: Record<string, string>;
+
   categoryRank: string[];
 }
 
-export function createOuterBaseOption(isIncome: boolean): EChartsOption {
+export function createOuterBaseOption(
+  isIncome: boolean,
+  isLine: boolean
+): EChartsOption {
+  const BASE_POLAR_INDEX = isLine ? 2 : 4;
   const startRadius = isIncome ? '30%' : '60%';
   const endRadius = isIncome ? '60%' : '90%';
-  const polarIndex = isIncome ? 2 : 3;
+  const polarIndex = BASE_POLAR_INDEX + (isIncome ? 0 : 1);
 
   return {
     polar: [
@@ -25,7 +43,8 @@ export function createOuterBaseOption(isIncome: boolean): EChartsOption {
     angleAxis: [
       {
         polarIndex,
-        type: 'category',
+        show: isLine,
+        type: isLine ? 'category' : 'time',
         axisLine: {
           show: isIncome,
           lineStyle: {
@@ -60,6 +79,7 @@ export function createOuterBaseOption(isIncome: boolean): EChartsOption {
     radiusAxis: [
       {
         polarIndex,
+        show: isLine,
         inverse: isIncome,
         type: 'value',
         axisLine: {
@@ -85,9 +105,19 @@ export function createOuterBaseOption(isIncome: boolean): EChartsOption {
         },
       },
     ],
+    tooltip: {},
   };
 }
 
+const SCATTER_SYMBOL_SIZE = [10, 48];
+
+/**
+ * 以日为单位聚合数据
+ * @param data
+ * @param categoryRank
+ * @param days
+ * @returns
+ */
 function buildCategoryDateGroup(
   data: OuterData[],
   categoryRank: string[],
@@ -132,17 +162,28 @@ function buildCategoryDateGroup(
   return dataGroup;
 }
 
-export function updateChartOption(
+function groupDataByCategory(data: OuterData[]): Record<string, OuterData[]> {
+  return data.reduce((acc, item) => {
+    acc[item.tradeCategory] = acc[item.tradeCategory] || [];
+    acc[item.tradeCategory].push(item);
+    return acc;
+  }, {} as Record<string, OuterData[]>);
+}
+
+export function updateStackLineOption(
   baseOption: EChartsOption,
   data: OuterData[],
   options: {
     isIncome: boolean;
     colorMap: Record<string, string>;
-    idMap: Record<string, BillRecord>;
     categoryRank: string[];
   }
 ): EChartsOption {
-  const { isIncome, colorMap, categoryRank, idMap } = options;
+  if (!data.length) {
+    return baseOption;
+  }
+
+  const { isIncome, colorMap, categoryRank } = options;
 
   // step1: 获取时间轴数组，格式为 Date
   const days = getMonthDaysArray(data[0].tradeTime);
@@ -155,7 +196,7 @@ export function updateChartOption(
     .filter(([key, value]) => value.length > 0)
     .map(([key, value]) => {
       return {
-        name: `${isIncome ? '收入' : '支出'}:${key}`,
+        name: `${isIncome ? 'income' : 'expense'}-${key}`,
         type: 'line',
         coordinateSystem: 'polar',
         polarIndex: isIncome ? 2 : 3,
@@ -177,6 +218,125 @@ export function updateChartOption(
     });
 
   (baseOption.series as LineSeriesOption[]) = series;
+
+  return baseOption;
+}
+
+export function updateScatterOption(
+  baseOption: EChartsOption,
+  data: OuterData[],
+  options: {
+    isIncome: boolean;
+    idMap: Record<string, BillRecord>;
+    colorMap: Record<string, string>;
+    tradeMinMax: TradeMinMax;
+  }
+): EChartsOption {
+  if (!data.length) {
+    return baseOption;
+  }
+
+  const { isIncome, colorMap, idMap, tradeMinMax } = options;
+  const dataGroup = groupDataByCategory(data);
+  const minMax = tradeMinMax[isIncome ? 'income' : 'expense'];
+
+  // step1: 获取时间范围，手动设定时间轴/角度轴
+  const [startDate, endDate] = getMonthRange(data[0].tradeTime);
+  (baseOption.angleAxis as AngleAxisOption[])[0] = {
+    ...(baseOption.angleAxis as AngleAxisOption[])[0],
+    min: startDate,
+    max: endDate,
+  };
+
+  // step2: 生成系列值
+
+  const series: ScatterSeriesOption[] = Object.entries(dataGroup).map(
+    ([key, value]) => {
+      return {
+        name: `${isIncome ? '收入' : '支出'}-${key}`,
+        type: 'scatter',
+        coordinateSystem: 'polar',
+        polarIndex: isIncome ? 4 : 5,
+        data: value.map((item) => {
+          return {
+            id: item.id,
+            value: [item.amount, item.tradeTime],
+          };
+        }),
+        itemStyle: {
+          color: colorMap[key],
+        },
+        symbolSize: (value) => {
+          const [amount] = value;
+          const size = (amount - minMax.min) / (minMax.max - minMax.min);
+          return (
+            SCATTER_SYMBOL_SIZE[0] +
+            (SCATTER_SYMBOL_SIZE[1] - SCATTER_SYMBOL_SIZE[0]) * size
+          );
+        },
+        tooltip: {
+          show: true,
+          formatter: (params) => {
+            const { data } = params;
+            const { id } = data as any;
+            const rawData = idMap[id];
+            const {
+              tradeTime,
+              amount,
+              tradeCategory,
+              counterparty,
+              description,
+            } = rawData;
+            return `
+            <div style="
+              background: #fff;
+              border-radius: 8px;
+              padding: 12px;
+              box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              min-width: 240px;
+            ">
+              <div style="
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 8px;
+                margin-bottom: 8px;
+                align-items: center;
+              ">
+                <div style="color: #666; white-space: nowrap;">${formatDate(
+                  tradeTime
+                )}</div>
+                <div style="color: #333; font-weight: 600; text-align: right;">¥${amount}</div>
+                <div style="
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  padding: 2px 8px;
+                  background: ${colorMap[tradeCategory]}22;
+                  color: ${colorMap[tradeCategory]};
+                  border-radius: 12px;
+                  font-size: 12px;
+                  width: fit-content;
+                ">${tradeCategory}</div>
+                <div style="color: #666; text-align: right; overflow: hidden; text-overflow: ellipsis;">${
+                  counterparty || '-'
+                }</div>
+              </div>
+              <div style="
+                color: #666;
+                font-size: 13px;
+                border-top: 1px solid #eee;
+                padding-top: 8px;
+              ">${description || '-'}</div>
+            </div>
+            `;
+          },
+        },
+      };
+    }
+  );
+
+  (baseOption.series as ScatterSeriesOption[]) = series;
 
   return baseOption;
 }

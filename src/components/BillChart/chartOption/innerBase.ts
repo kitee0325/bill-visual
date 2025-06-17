@@ -157,6 +157,7 @@ export function createBasePolarOption(isIncome: boolean): EChartsOption {
         coordinateSystem: 'polar',
         polarIndex,
         stack: `inner-${isIncome ? 'income' : 'expense'}`,
+        silent: true,
       },
       {
         name: `${isIncome ? 'income' : 'expense'}-increase`,
@@ -169,6 +170,7 @@ export function createBasePolarOption(isIncome: boolean): EChartsOption {
           borderWidth: 2,
           borderColor: '#000',
         },
+        silent: true,
       },
       {
         name: `${isIncome ? 'income' : 'expense'}-decrease`,
@@ -182,6 +184,7 @@ export function createBasePolarOption(isIncome: boolean): EChartsOption {
           borderColor: '#000',
           borderType: 'dashed',
         },
+        silent: true,
       },
     ],
   };

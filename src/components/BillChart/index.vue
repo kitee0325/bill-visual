@@ -31,7 +31,9 @@ function updateChart() {
     categoryDiff[monthIndex.value],
     { colorMap, categoryRank, tradeMinMax }
   );
-  chartInstance.setOption(chartOption);
+  chartInstance.setOption(chartOption, {
+    notMerge: true,
+  });
   chartInstance.resize();
 }
 

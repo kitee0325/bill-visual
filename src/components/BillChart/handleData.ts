@@ -122,7 +122,7 @@ export function parseBillData(data: any[][]): BillRecord[] {
       counterpartyAccount: counterpartyAccount,
       description: description,
       incomeOrExpense: incomeOrExpense,
-      amount,
+      amount: Number(Number(amount).toFixed(2)),
       paymentMethod: paymentMethod,
       tradeStatus: tradeStatus,
       tradeOrderId: tradeOrderId || -1,
@@ -257,9 +257,13 @@ export function getCategoriesDiff(
     monthRecords.forEach((record) => {
       const category = record.tradeCategory;
       if (record.incomeOrExpense === '收入') {
-        monthIncomeStatistics[category] += record.amount;
+        monthIncomeStatistics[category] = Number(
+          (monthIncomeStatistics[category] + record.amount).toFixed(2)
+        );
       } else {
-        monthExpenseStatistics[category] += record.amount;
+        monthExpenseStatistics[category] = Number(
+          (monthExpenseStatistics[category] + record.amount).toFixed(2)
+        );
       }
     });
 
@@ -271,20 +275,25 @@ export function getCategoriesDiff(
   function calculateDiff(statistics: Record<string, number>[]): CategoryDiff[] {
     return statistics.map((monthData, i) => {
       return Object.keys(monthData).reduce((acc, d) => {
-        const lastValue = statistics[i - 1] ? statistics[i - 1][d] : 0;
+        const lastValue = statistics[i - 1]
+          ? Number(statistics[i - 1][d].toFixed(2))
+          : 0;
+        const currentValue = Number(monthData[d].toFixed(2));
         let diff =
-          lastValue === 0 ? 0 : Number((monthData[d] - lastValue).toFixed(2));
+          lastValue === 0 ? 0 : Number((currentValue - lastValue).toFixed(2));
 
         // 如果差值小于10元或差值占值的比例小于5%，则认为差值为0
-        if (Math.abs(diff) < 10 || Math.abs(diff) / monthData[d] < 0.05) {
+        if (Math.abs(diff) < 10 || Math.abs(diff) / currentValue < 0.05) {
           diff = 0;
         }
 
         acc[d] = {
-          increase: diff > 0 ? diff : 0,
-          decrease: diff < 0 ? -diff : 0,
+          increase: diff > 0 ? Number(diff.toFixed(2)) : 0,
+          decrease: diff < 0 ? Number((-diff).toFixed(2)) : 0,
           value:
-            diff > 0 ? Number((monthData[d] - diff).toFixed(2)) : monthData[d],
+            diff > 0
+              ? Number((currentValue - diff).toFixed(2))
+              : Number(currentValue.toFixed(2)),
         };
         return acc;
       }, {} as CategoryDiff);

@@ -127,7 +127,6 @@ export function getInnerOption(
   const { income, expense } = categoryDiff;
   const incomeData = getData(income);
   const expenseData = getData(expense);
-  console.log(incomeData, expenseData);
 
   if (incomeData.category.length === 0 && expenseData.category.length === 0) {
     return {};
@@ -144,7 +143,6 @@ export function getInnerOption(
       colorMap,
     });
   }
-  console.log(incomeOption);
 
   let expenseOption: EChartsOption | null = null;
   if (expenseData.category.length > 0) {

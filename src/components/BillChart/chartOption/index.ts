@@ -4,7 +4,7 @@ import {
   type TradeMinMax,
 } from '../handleData';
 import { getInnerOption } from './inner';
-import { getOuterOption } from './outer';
+import { getOuterOption, getScatterOption } from './outer';
 import { mergeObjectArrays } from './util';
 
 export function getChartOption(
@@ -25,6 +25,9 @@ export function getChartOption(
   const { colorMap, categoryRank, tradeMinMax } = options;
   const innerOption = getInnerOption(categoryDiff, { colorMap, tradeMinMax });
   const outerOption = getOuterOption(records, { categoryRank, colorMap });
+  const scatterOption = getScatterOption(records, { colorMap, tradeMinMax });
+  const tempOption = mergeObjectArrays(innerOption, outerOption);
+
   // @ts-ignore
-  return mergeObjectArrays(innerOption, outerOption);
+  return mergeObjectArrays(tempOption, scatterOption);
 }

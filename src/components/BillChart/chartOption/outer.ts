@@ -1,9 +1,11 @@
 import type { EChartsOption } from 'echarts';
-import { type BillRecord } from '../handleData';
+import { type BillRecord, type TradeMinMax } from '../handleData';
 import {
   createOuterBaseOption,
-  updateChartOption,
-  type OuterChartOptions,
+  updateStackLineOption,
+  updateScatterOption,
+  type OuterScatterChartOptions,
+  type OuterStackLineChartOptions,
 } from './outerBase';
 import { mergeObjectArrays } from './util';
 
@@ -41,15 +43,35 @@ function cleanData(records: BillRecord[]): OuterData[] {
 }
 
 // 缓存 baseOption，避免重复创建
-const baseOptionCache: { income?: any; expense?: any } = {};
+const baseOptionCache: {
+  'income-line'?: EChartsOption;
+  'expense-line'?: EChartsOption;
+  'income-scatter'?: EChartsOption;
+  'expense-scatter'?: EChartsOption;
+} = {};
 
-function getOuterPolarOption(data: OuterData[], options: OuterChartOptions) {
+function getLinePolarOption(
+  data: OuterData[],
+  options: OuterStackLineChartOptions
+) {
   const { isIncome } = options;
-  const cacheKey = isIncome ? 'income' : 'expense';
+  const cacheKey = isIncome ? 'income-line' : 'expense-line';
   if (!baseOptionCache[cacheKey]) {
-    baseOptionCache[cacheKey] = createOuterBaseOption(isIncome);
+    baseOptionCache[cacheKey] = createOuterBaseOption(isIncome, true);
   }
-  return updateChartOption({ ...baseOptionCache[cacheKey] }, data, options);
+  return updateStackLineOption({ ...baseOptionCache[cacheKey] }, data, options);
+}
+
+function getScatterPolarOption(
+  data: OuterData[],
+  options: OuterScatterChartOptions
+) {
+  const { isIncome } = options;
+  const cacheKey = isIncome ? 'income-scatter' : 'expense-scatter';
+  if (!baseOptionCache[cacheKey]) {
+    baseOptionCache[cacheKey] = createOuterBaseOption(isIncome, false);
+  }
+  return updateScatterOption({ ...baseOptionCache[cacheKey] }, data, options);
 }
 
 export function getOuterOption(
@@ -70,35 +92,56 @@ export function getOuterOption(
     (record) => record.incomeOrExpense === '支出'
   );
 
-  if (incomeRecords.length === 0 && expenseRecords.length === 0) {
-    return {};
+  const incomeData = cleanData(incomeRecords);
+  const incomeOption = getLinePolarOption(incomeData, {
+    isIncome: true,
+    colorMap,
+    categoryRank: categoryRank.income,
+  });
+
+  const expenseData = cleanData(expenseRecords);
+  const expenseOption = getLinePolarOption(expenseData, {
+    isIncome: false,
+    colorMap,
+    categoryRank: categoryRank.expense,
+  });
+
+  // @ts-ignore
+  return mergeObjectArrays(incomeOption, expenseOption);
+}
+
+export function getScatterOption(
+  records: BillRecord[],
+  options: {
+    colorMap: Record<string, string>;
+    tradeMinMax: TradeMinMax;
   }
+) {
+  const { colorMap, tradeMinMax } = options;
+  const incomeRecords = records.filter(
+    (record) => record.incomeOrExpense === '收入'
+  );
+  const expenseRecords = records.filter(
+    (record) => record.incomeOrExpense === '支出'
+  );
 
-  let incomeOption: EChartsOption | null = {};
-  let expenseOption: EChartsOption | null = {};
+  const incomeData = cleanData(incomeRecords);
+  const incomeIDMap = createIdMap(incomeRecords);
+  const incomeOption = getScatterPolarOption(incomeData, {
+    isIncome: true,
+    idMap: incomeIDMap,
+    colorMap,
+    tradeMinMax,
+  });
 
-  if (incomeRecords.length > 0) {
-    const incomeMap = createIdMap(incomeRecords);
-    const incomeData = cleanData(incomeRecords);
-    incomeOption = getOuterPolarOption(incomeData, {
-      isIncome: true,
-      colorMap,
-      idMap: incomeMap,
-      categoryRank: categoryRank.income,
-    });
-  }
-
-  if (expenseRecords.length > 0) {
-    const expenseMap = createIdMap(expenseRecords);
-    const expenseData = cleanData(expenseRecords);
-
-    expenseOption = getOuterPolarOption(expenseData, {
-      isIncome: false,
-      colorMap,
-      idMap: expenseMap,
-      categoryRank: categoryRank.expense,
-    });
-  }
+  const expenseData = cleanData(expenseRecords);
+  const expenseIDMap = createIdMap(expenseRecords);
+  const expenseOption = getScatterPolarOption(expenseData, {
+    isIncome: false,
+    idMap: expenseIDMap,
+    colorMap,
+    tradeMinMax,
+  });
 
   // @ts-ignore
   return mergeObjectArrays(incomeOption, expenseOption);
