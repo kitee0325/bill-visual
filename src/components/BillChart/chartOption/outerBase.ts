@@ -1,8 +1,7 @@
 import { type EChartsOption, type LineSeriesOption } from 'echarts';
 import type { OuterData } from './outer';
-import { getMonthRange } from './util';
-import type { AngleAxisOption } from 'echarts/types/dist/shared';
 import type { BillRecord } from '../handleData';
+import { getMonthDaysArray, formatDate } from './util';
 
 export interface OuterChartOptions {
   isIncome: boolean;
@@ -17,7 +16,6 @@ export function createOuterBaseOption(isIncome: boolean): EChartsOption {
   const polarIndex = isIncome ? 2 : 3;
 
   return {
-    legend: {},
     polar: [
       {
         center: ['50%', '50%'],
@@ -27,7 +25,7 @@ export function createOuterBaseOption(isIncome: boolean): EChartsOption {
     angleAxis: [
       {
         polarIndex,
-        type: 'time',
+        type: 'category',
         axisLine: {
           show: isIncome,
           lineStyle: {
@@ -40,9 +38,22 @@ export function createOuterBaseOption(isIncome: boolean): EChartsOption {
           color: '#999',
           fontSize: 14,
           fontWeight: 'bold',
+          formatter: (value: string, index: number) => {
+            const [year, month, day] = value.split('-');
+            if (index === 0) {
+              return `${year}-${month}-${day}`;
+            }
+            return `${month}-${day}`;
+          },
         },
         axisTick: {
           show: false,
+        },
+        splitLine: {
+          show: true,
+          lineStyle: {
+            color: '#ddd',
+          },
         },
       },
     ],
@@ -80,100 +91,43 @@ export function createOuterBaseOption(isIncome: boolean): EChartsOption {
 function buildCategoryDateGroup(
   data: OuterData[],
   categoryRank: string[],
-  timeRange: [Date, Date]
+  days: Date[]
 ): Record<string, OuterData[]> {
-  // 1. 生成 timeRange 内所有日期（每天 12:00）
-  const [startDate, endDate] = timeRange;
-  const days: Date[] = [];
-  for (
-    let cur = new Date(
-      startDate.getFullYear(),
-      startDate.getMonth(),
-      startDate.getDate(),
-      12,
-      0,
-      0,
-      0
-    );
-    cur <= endDate;
-    cur.setDate(cur.getDate() + 1)
-  ) {
-    days.push(new Date(cur));
-  }
-
-  // 2. 日期字符串映射，便于查找
+  // 1. 日期字符串映射，便于查找
   const dayStrMap = new Map<string, number>();
   days.forEach((d, idx) => {
     dayStrMap.set(d.toDateString(), idx);
   });
 
-  // 3. 初始化 dataGroup
-  const dataGroup: Record<string, OuterData[]> = categoryRank.reduce(
-    (acc, category) => {
-      acc[category] = days.map((d) => ({
-        id: crypto.randomUUID(),
-        amount: 0,
-        tradeTime: new Date(d),
-        tradeCategory: category,
-      }));
-      return acc;
-    },
-    {} as Record<string, OuterData[]>
-  );
+  // 2. 初始化 dataGroup
+  const dataGroup: Record<string, OuterData[]> = {};
+  for (const category of categoryRank) {
+    dataGroup[category] = days.map((d) => ({
+      id: crypto.randomUUID(),
+      amount: 0,
+      tradeTime: d,
+      tradeCategory: category,
+    }));
+  }
 
-  // 4. 累加数据
-  data.forEach((item) => {
+  // 3. 累加数据
+  for (const item of data) {
     const category = item.tradeCategory;
     const idx = dayStrMap.get(item.tradeTime.toDateString());
     if (idx !== undefined && dataGroup[category]) {
       dataGroup[category][idx].amount += item.amount;
     }
-  });
+  }
 
-  // 5. 为每个 category 的数组头部和尾部添加数据对象，实现首尾相连
-  Object.entries(dataGroup).forEach(([category, arr]) => {
-    if (arr.length === 0) return;
-    const first = arr[0];
-    const last = arr[arr.length - 1];
-    const avgAmount = Number(((first.amount + last.amount) / 2).toFixed(2));
-    // 本月第一天 00:00:00
-    const headTime = new Date(
-      startDate.getFullYear(),
-      startDate.getMonth(),
-      1,
-      0,
-      0,
-      0,
-      0
-    );
-    // 本月最后一天 23:59:59
-    const lastDay = new Date(
-      startDate.getFullYear(),
-      startDate.getMonth() + 1,
-      0
-    ); // 最后一天
-    const tailTime = new Date(
-      lastDay.getFullYear(),
-      lastDay.getMonth(),
-      lastDay.getDate(),
-      23,
-      59,
-      59,
-      0
-    );
-    arr.unshift({
-      id: crypto.randomUUID(),
-      amount: avgAmount,
-      tradeTime: headTime,
-      tradeCategory: category,
-    });
-    arr.push({
-      id: crypto.randomUUID(),
-      amount: avgAmount,
-      tradeTime: tailTime,
-      tradeCategory: category,
-    });
-  });
+  // 4. 在数组尾部添加头部的拷贝，使得在极坐标下，曲线闭合
+  for (const category of categoryRank) {
+    const arr = dataGroup[category];
+    if (arr && arr.length > 0) {
+      // 拷贝第一个元素，生成新的 id
+      const first = { ...arr[0], id: crypto.randomUUID() };
+      arr.push(first);
+    }
+  }
 
   return dataGroup;
 }
@@ -190,30 +144,26 @@ export function updateChartOption(
 ): EChartsOption {
   const { isIncome, colorMap, categoryRank, idMap } = options;
 
-  // step1: 获取时间范围并设置时间轴，让时间轴总是以月为单位
-  const timeRange = getMonthRange(data[0].tradeTime);
-  (baseOption.angleAxis as AngleAxisOption[])[0] = {
-    ...(baseOption.angleAxis as AngleAxisOption[])[0],
-    min: timeRange[0],
-    max: timeRange[1],
-  };
+  // step1: 获取时间轴数组，格式为 Date
+  const days = getMonthDaysArray(data[0].tradeTime);
 
   // step2: 数据预处理
-  const dataGroup = buildCategoryDateGroup(data, categoryRank, timeRange);
+  const dataGroup = buildCategoryDateGroup(data, categoryRank, days);
 
   // step3: 设置series
   const series: LineSeriesOption[] = Object.entries(dataGroup)
     .filter(([key, value]) => value.length > 0)
     .map(([key, value]) => {
       return {
-        name: `${isIncome ? 'income' : 'expense'}-${key}`,
-        polarIndex: isIncome ? 2 : 3,
-        coordinateSystem: 'polar',
-        stack: `${isIncome ? 'income' : 'expense'}`,
+        name: `${isIncome ? '收入' : '支出'}:${key}`,
         type: 'line',
-        data: value.map((item) => [item.amount, item.tradeTime]),
-        // showSymbol: false,
-        smooth: 0.5,
+        coordinateSystem: 'polar',
+        polarIndex: isIncome ? 2 : 3,
+        stack: `outer-${isIncome ? 'income' : 'expense'}`,
+        data: value.map((item) => [item.amount, formatDate(item.tradeTime)]),
+        showSymbol: false,
+        smooth: 0.4,
+        silent: true,
         itemStyle: {
           color: colorMap[key],
         },

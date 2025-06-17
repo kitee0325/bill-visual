@@ -6,10 +6,19 @@ import type {
 import { type InnerData } from './inner';
 
 export interface InnerChartOptions {
+  isIncome: boolean;
   extend: [number, number];
   colorMap: Record<string, string>;
 }
 
+interface SetSeriesDataOptions {
+  rawData: number[];
+  stackIndex: number;
+  stackEnd: number[];
+  category: string[];
+  colorMap: Record<string, string>;
+  isIncome: boolean;
+}
 /**
  * 获取系列值的堆叠结束位置
  * @param data
@@ -31,16 +40,12 @@ function getStackEnd(data: InnerData) {
  * @param stackEnd 堆叠结束位置
  * @param category 类别
  * @param colorMap 颜色映射
+ * @param isIncome 是否是收入
  * @returns
  */
-function setSeriesData(
-  data: number[],
-  rawData: number[],
-  stackIndex: number,
-  stackEnd: number[],
-  category: string[],
-  colorMap: Record<string, string>
-) {
+function setSeriesData(data: number[], options: SetSeriesDataOptions) {
+  const { rawData, stackIndex, stackEnd, category, colorMap, isIncome } =
+    options;
   return data.map((val, i) => {
     const isStackEnd = stackEnd[i] === stackIndex;
     const color = colorMap[category[i]];
@@ -66,6 +71,9 @@ function setSeriesData(
       label = {
         show: true,
         formatter: (params: any) => {
+          if (rawData[i] === 0) {
+            return '';
+          }
           return `{category|${category[i]}}\n{value|${rawData[i]}}`;
         },
         rich: {
@@ -80,7 +88,7 @@ function setSeriesData(
             fontWeight: 'bold',
           },
         },
-        position: 'end',
+        position: isIncome ? 'end' : 'insideEnd',
       };
     }
 
@@ -94,8 +102,7 @@ function setSeriesData(
 
 export function createBasePolarOption(isIncome: boolean): EChartsOption {
   const polarIndex = isIncome ? 0 : 1;
-  const startAngle = isIncome ? 90 : -90;
-  const endAngle = isIncome ? -90 : -270;
+  const endAngle = isIncome ? -90 : 270;
 
   return {
     polar: [
@@ -107,7 +114,6 @@ export function createBasePolarOption(isIncome: boolean): EChartsOption {
     angleAxis: [
       {
         polarIndex,
-        startAngle,
         endAngle,
         axisTick: {
           show: false,
@@ -130,16 +136,13 @@ export function createBasePolarOption(isIncome: boolean): EChartsOption {
       {
         polarIndex,
         type: 'category',
-        inverse: true,
         axisTick: {
           show: false,
         },
         axisLine: {
-          // show: false,
           lineStyle: {
-            color: '#ddd',
+            color: '#999',
             width: 3,
-            type: 'dashed',
           },
         },
         axisLabel: {
@@ -153,16 +156,18 @@ export function createBasePolarOption(isIncome: boolean): EChartsOption {
         type: 'bar',
         coordinateSystem: 'polar',
         polarIndex,
-        stack: `${isIncome ? 'income' : 'expense'}`,
+        stack: `inner-${isIncome ? 'income' : 'expense'}`,
       },
       {
         name: `${isIncome ? 'income' : 'expense'}-increase`,
         type: 'bar',
         coordinateSystem: 'polar',
         polarIndex,
-        stack: `${isIncome ? 'income' : 'expense'}`,
+        stack: `inner-${isIncome ? 'income' : 'expense'}`,
         itemStyle: {
-          color: '#f5222d',
+          color: '#ff7875',
+          borderWidth: 2,
+          borderColor: '#000',
         },
       },
       {
@@ -170,10 +175,9 @@ export function createBasePolarOption(isIncome: boolean): EChartsOption {
         type: 'bar',
         coordinateSystem: 'polar',
         polarIndex,
-        stack: `${isIncome ? 'income' : 'expense'}`,
+        stack: `inner-${isIncome ? 'income' : 'expense'}`,
         itemStyle: {
-          color: '#52c41a',
-          opacity: 0.5,
+          color: '#d9f7be',
           borderWidth: 2,
           borderColor: '#000',
           borderType: 'dashed',
@@ -189,7 +193,7 @@ export function updateChartOption(
   options: InnerChartOptions
 ): EChartsOption {
   const { category, increase, decrease, value, rawValue } = data;
-  const { extend, colorMap } = options;
+  const { extend, colorMap, isIncome } = options;
   const stackEnd = getStackEnd(data);
 
   // step1:设置半径轴
@@ -212,7 +216,14 @@ export function updateChartOption(
     increase,
     decrease,
   ].map((data, index) =>
-    setSeriesData(data, rawValue, index, stackEnd, category, colorMap)
+    setSeriesData(data, {
+      rawData: rawValue,
+      stackIndex: index,
+      stackEnd,
+      category,
+      colorMap,
+      isIncome,
+    })
   );
 
   (baseOption.series as BarSeriesOption[])[0] = {

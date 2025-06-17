@@ -1,5 +1,5 @@
 import type { EChartsOption } from 'echarts';
-import { type CategoryDiff } from '../handleData';
+import { type CategoryDiff, type TradeMinMax } from '../handleData';
 import {
   createBasePolarOption,
   updateChartOption,
@@ -22,23 +22,32 @@ export type InnerData = {
  * @returns
  */
 function getData(categoryDiff: CategoryDiff, n = 5): InnerData {
-  const data: CategoryDiff = Object.keys(categoryDiff)
-    .sort((a, b) => categoryDiff[b].value - categoryDiff[a].value)
-    .filter((key) => categoryDiff[key].value !== 0)
-    .slice(0, n)
-    .reduce((acc, key) => {
-      acc[key] = categoryDiff[key];
-      return acc;
-    }, {} as CategoryDiff);
+  // step1: 将categoryDiff转为数组
+  const categoryDiffArray = Object.keys(categoryDiff).map((key) => ({
+    category: key,
+    ...categoryDiff[key],
+  }));
 
-  const category = Object.keys(data);
-  const increase = Object.values(data).map((d) => d.increase);
-  const decrease = Object.values(data).map((d) => d.decrease);
-  const value = Object.values(data).map((d) => d.value);
+  // step2: 过滤掉value为0的，并按value从大到小排序，并取前N
+  const data = categoryDiffArray
+    .filter((d) => d.value !== 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, n);
+
+  // step3: 将数据反转
+  const category = data.map((d) => d.category).reverse();
+  const increase = data.map((d) => d.increase).reverse();
+  const decrease = data.map((d) => d.decrease).reverse();
+  const value = data.map((d) => d.value).reverse();
   const rawValue = value.map((d, i) => Number((d + increase[i]).toFixed(2)));
 
+  // step4: 如果数据长度小于N，则补全空数据
   if (category.length < n) {
-    category.push(...Array.from({ length: n - category.length }, () => ''));
+    category.unshift(...Array.from({ length: n - category.length }, () => ''));
+    increase.unshift(...Array.from({ length: n - increase.length }, () => 0));
+    decrease.unshift(...Array.from({ length: n - decrease.length }, () => 0));
+    value.unshift(...Array.from({ length: n - value.length }, () => 0));
+    rawValue.unshift(...Array.from({ length: n - rawValue.length }, () => 0));
   }
 
   return { category, increase, decrease, value, rawValue };
@@ -49,10 +58,10 @@ function getData(categoryDiff: CategoryDiff, n = 5): InnerData {
  * @param data
  * @returns
  */
-function getNiceMinMax(data: number[]): [number, number] {
+function getNiceMinMax(data: { min: number; max: number }): [number, number] {
   const splitNumber = 5;
-  let min = Math.min(...data);
-  let max = Math.max(...data);
+  let min = data.min;
+  let max = data.max;
   // 避免极值与数据最大值相等，形成视觉效果不好的半圆
   max *= 1.1;
   if (min === max) {
@@ -94,14 +103,10 @@ function nice(num: number) {
 // 缓存 baseOption，避免重复创建
 const baseOptionCache: { income?: any; expense?: any } = {};
 
-function getInnerPolarOption(
-  data: InnerData,
-  options: InnerChartOptions,
-  isIncome: boolean
-) {
-  const cacheKey = isIncome ? 'income' : 'expense';
+function getInnerPolarOption(data: InnerData, options: InnerChartOptions) {
+  const cacheKey = options.isIncome ? 'income' : 'expense';
   if (!baseOptionCache[cacheKey]) {
-    baseOptionCache[cacheKey] = createBasePolarOption(isIncome);
+    baseOptionCache[cacheKey] = createBasePolarOption(options.isIncome);
   }
   // 注意：updateChartOption 可能会修改 baseOption，
   // 如果 updateChartOption 有副作用，需深拷贝 baseOption
@@ -113,43 +118,41 @@ export function getInnerOption(
     income: CategoryDiff;
     expense: CategoryDiff;
   },
-  colorMap: Record<string, string>
+  options: {
+    colorMap: Record<string, string>;
+    tradeMinMax: TradeMinMax;
+  }
 ) {
+  const { colorMap, tradeMinMax } = options;
   const { income, expense } = categoryDiff;
   const incomeData = getData(income);
   const expenseData = getData(expense);
+  console.log(incomeData, expenseData);
 
   if (incomeData.category.length === 0 && expenseData.category.length === 0) {
     return {};
   }
 
-  const extend = getNiceMinMax([
-    ...incomeData.rawValue,
-    ...expenseData.rawValue,
-  ]);
+  const incomeExtend = getNiceMinMax(tradeMinMax.income);
+  const expenseExtend = getNiceMinMax(tradeMinMax.expense);
 
   let incomeOption: EChartsOption | null = null;
   if (incomeData.category.length > 0) {
-    incomeOption = getInnerPolarOption(
-      incomeData,
-      {
-        extend,
-        colorMap,
-      },
-      true
-    );
+    incomeOption = getInnerPolarOption(incomeData, {
+      isIncome: true,
+      extend: incomeExtend,
+      colorMap,
+    });
   }
+  console.log(incomeOption);
 
   let expenseOption: EChartsOption | null = null;
   if (expenseData.category.length > 0) {
-    expenseOption = getInnerPolarOption(
-      expenseData,
-      {
-        extend,
-        colorMap,
-      },
-      false
-    );
+    expenseOption = getInnerPolarOption(expenseData, {
+      isIncome: false,
+      extend: expenseExtend,
+      colorMap,
+    });
   }
 
   // @ts-ignore

@@ -1,4 +1,8 @@
-import { type BillRecord, type CategoryDiff } from '../handleData';
+import {
+  type BillRecord,
+  type CategoryDiff,
+  type TradeMinMax,
+} from '../handleData';
 import { getInnerOption } from './inner';
 import { getOuterOption } from './outer';
 import { mergeObjectArrays } from './util';
@@ -15,12 +19,12 @@ export function getChartOption(
       income: string[];
       expense: string[];
     };
+    tradeMinMax: TradeMinMax;
   }
 ) {
-  const { colorMap, categoryRank } = options;
-  const innerOption = getInnerOption(categoryDiff, colorMap);
+  const { colorMap, categoryRank, tradeMinMax } = options;
+  const innerOption = getInnerOption(categoryDiff, { colorMap, tradeMinMax });
   const outerOption = getOuterOption(records, { categoryRank, colorMap });
-
   // @ts-ignore
   return mergeObjectArrays(innerOption, outerOption);
 }

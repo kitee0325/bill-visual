@@ -31,6 +31,11 @@ export type CategoryDiff = Record<
   Record<'increase' | 'decrease' | 'value', number>
 >;
 
+export type TradeMinMax = Record<
+  'income' | 'expense',
+  { min: number; max: number }
+>;
+
 /**
  * Excel序列号转JS日期
  * @param serial
@@ -134,6 +139,28 @@ export function parseBillData(data: any[][]): BillRecord[] {
   return records;
 }
 
+/** 计算全周期中，支出和收入的极值
+ *
+ */
+export function getTradeMinMax(records: BillRecord[]): TradeMinMax {
+  const income = records
+    .filter((r) => r.incomeOrExpense === '收入')
+    .map((r) => r.amount);
+  const expense = records
+    .filter((r) => r.incomeOrExpense === '支出')
+    .map((r) => r.amount);
+  return {
+    income: {
+      min: Math.min(...income),
+      max: Math.max(...income),
+    },
+    expense: {
+      min: Math.min(...expense),
+      max: Math.max(...expense),
+    },
+  };
+}
+
 export function groupDataByMonth(records: BillRecord[]) {
   const monthStatistics: Record<string, BillRecord[]> = {};
   records.forEach((record) => {
@@ -230,9 +257,9 @@ export function getCategoriesDiff(
     monthRecords.forEach((record) => {
       const category = record.tradeCategory;
       if (record.incomeOrExpense === '收入') {
-        monthIncomeStatistics[category] = record.amount;
+        monthIncomeStatistics[category] += record.amount;
       } else {
-        monthExpenseStatistics[category] = record.amount;
+        monthExpenseStatistics[category] += record.amount;
       }
     });
 
@@ -249,7 +276,7 @@ export function getCategoriesDiff(
           lastValue === 0 ? 0 : Number((monthData[d] - lastValue).toFixed(2));
 
         // 如果差值小于10元或差值占值的比例小于5%，则认为差值为0
-        if (diff < 10 || diff / monthData[d] < 0.05) {
+        if (Math.abs(diff) < 10 || Math.abs(diff) / monthData[d] < 0.05) {
           diff = 0;
         }
 
@@ -281,6 +308,8 @@ export function getCategoriesDiff(
 export function processBillData(billData: any[][]) {
   // 全周期数据处理
   const records = parseBillData(billData);
+  // 计算全周期中，支出和收入的极值
+  const tradeMinMax = getTradeMinMax(records);
   // 类别统计
   const categoryRank = getSortedCategoriesByAmount(records);
   // 类别颜色映射
@@ -296,5 +325,6 @@ export function processBillData(billData: any[][]) {
     categoryRank,
     colorMap,
     categoryDiff,
+    tradeMinMax,
   };
 }
