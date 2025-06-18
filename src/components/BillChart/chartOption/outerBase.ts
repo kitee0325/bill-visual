@@ -3,7 +3,7 @@ import {
   type LineSeriesOption,
   type ScatterSeriesOption,
 } from 'echarts';
-import type { AngleAxisOption } from 'echarts/types/dist/shared';
+import type { AngleAxisOption, LegendOption } from 'echarts/types/dist/shared';
 import type { OuterData } from './outer';
 import type { BillRecord, TradeMinMax } from '../handleData';
 import { getMonthDaysArray, formatDate, getMonthRange } from './util';
@@ -249,11 +249,11 @@ export function updateScatterOption(
   };
 
   // step2: 生成系列值
-
   const series: ScatterSeriesOption[] = Object.entries(dataGroup).map(
     ([key, value]) => {
       return {
-        name: `${isIncome ? '收入' : '支出'}-${key}`,
+        id: `${isIncome ? '收入' : '支出'}-${key}`,
+        name: `${key}`,
         type: 'scatter',
         coordinateSystem: 'polar',
         polarIndex: isIncome ? 4 : 5,
@@ -335,6 +335,12 @@ export function updateScatterOption(
       };
     }
   );
+
+  // step3: 设置legend
+  (baseOption.legend as LegendOption) = {
+    data: series.map((item) => item.name as string),
+    top: `${isIncome ? '0px' : '20px'}`,
+  };
 
   (baseOption.series as ScatterSeriesOption[]) = series;
 

@@ -1,6 +1,7 @@
 # bill-vis
 
-This template should help get you started developing with Vue 3 in Vite.
+![](https://kitee-1301346990.cos.ap-nanjing.myqcloud.com/Obsidian/202506181739446.png?imageSlim)
+支付宝账单可视化，基于 ECharts 实现，Vue3 基础项目，提供 mock 数据，支持用户从【支付宝】->【我的】->【账单】->【右上角...】->【开具交易流水】中获取个人的交易记录，并导入分析
 
 ## Recommended IDE Setup
 

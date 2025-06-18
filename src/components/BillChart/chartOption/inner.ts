@@ -76,10 +76,12 @@ export function getNiceInterval(data: { min: number; max: number }): number[] {
   const interval = nice(span / splitNumber);
 
   const fixMin = Math.floor(min / interval) * interval;
+  const fixMax = Math.ceil(max / interval) * interval;
 
-  const intervalList = Array.from({ length: splitNumber }, (_, i) => {
-    return fixMin + i * interval;
-  });
+  let intervalList = [];
+  for (let i = fixMin; i <= fixMax; i += interval) {
+    intervalList.push(i);
+  }
 
   return intervalList;
 }

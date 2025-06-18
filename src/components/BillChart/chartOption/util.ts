@@ -118,7 +118,6 @@ export function formatDate(date: Date): string {
  * @throws {Error} 当输入的hex格式不正确时抛出错误
  */
 export function hexToRgba(hex: string, opacity: number): ZRColor {
-  console.log(hex, opacity);
   // 参数验证
   if (!hex) {
     return hex;
