@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 // @ts-ignore
 import * as XLSX from 'xlsx';
+import mockData from '@/assets/mockData.json';
 
 const isDragging = ref(false);
 const errorMsg = ref('');
@@ -71,6 +72,10 @@ function handleFiles(files: FileList | null | undefined) {
   };
   reader.readAsText(file, 'GBK');
 }
+
+function useMockData() {
+  emit('finish', mockData);
+}
 </script>
 
 <template>
@@ -121,6 +126,9 @@ function handleFiles(files: FileList | null | undefined) {
       <div v-if="isDragging" class="drag-overlay"></div>
     </transition>
   </div>
+  <button class="mock-btn" type="button" @click.stop="useMockData">
+    使用mock数据
+  </button>
 </template>
 
 <style scoped lang="scss">
@@ -207,5 +215,21 @@ function handleFiles(files: FileList | null | undefined) {
   padding: 6px 0 4px 0;
   box-shadow: 0 2px 8px #ff4f4f22;
   z-index: 3;
+}
+.mock-btn {
+  display: block;
+  margin: 24px auto 0 auto;
+  padding: 6px 18px;
+  font-size: 1rem;
+  background: #4f8cff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+  box-shadow: 0 2px 8px #4f8cff22;
+  &:hover {
+    background: #2563eb;
+  }
 }
 </style>
