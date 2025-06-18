@@ -58,7 +58,7 @@ function getData(categoryDiff: CategoryDiff, n = 5): InnerData {
  * @param data
  * @returns
  */
-function getNiceMinMax(data: { min: number; max: number }): [number, number] {
+export function getNiceInterval(data: { min: number; max: number }): number[] {
   const splitNumber = 5;
   let min = data.min;
   let max = data.max;
@@ -74,9 +74,14 @@ function getNiceMinMax(data: { min: number; max: number }): [number, number] {
   }
   const span = max - min;
   const interval = nice(span / splitNumber);
-  min = Math.floor(min / interval) * interval;
-  max = Math.ceil(max / interval) * interval;
-  return [min, max];
+
+  const fixMin = Math.floor(min / interval) * interval;
+
+  const intervalList = Array.from({ length: splitNumber }, (_, i) => {
+    return fixMin + i * interval;
+  });
+
+  return intervalList;
 }
 
 /**
@@ -132,8 +137,16 @@ export function getInnerOption(
     return {};
   }
 
-  const incomeExtend = getNiceMinMax(tradeMinMax.income);
-  const expenseExtend = getNiceMinMax(tradeMinMax.expense);
+  const incomeSplit = getNiceInterval(tradeMinMax.income);
+  const expenseSplit = getNiceInterval(tradeMinMax.expense);
+  const incomeExtend: [number, number] = [
+    incomeSplit[0],
+    incomeSplit[incomeSplit.length - 1],
+  ];
+  const expenseExtend: [number, number] = [
+    expenseSplit[0],
+    expenseSplit[expenseSplit.length - 1],
+  ];
 
   let incomeOption: EChartsOption | null = null;
   if (incomeData.category.length > 0) {

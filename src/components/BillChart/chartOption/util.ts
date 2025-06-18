@@ -118,9 +118,10 @@ export function formatDate(date: Date): string {
  * @throws {Error} 当输入的hex格式不正确时抛出错误
  */
 export function hexToRgba(hex: string, opacity: number): ZRColor {
+  console.log(hex, opacity);
   // 参数验证
   if (!hex) {
-    throw new Error('HEX color value is required');
+    return hex;
   }
 
   // 移除可能存在的 # 前缀
@@ -142,4 +143,52 @@ export function hexToRgba(hex: string, opacity: number): ZRColor {
   const b = parseInt(cleanHex.slice(4, 6), 16);
 
   return `rgba(${r}, ${g}, ${b}, ${validOpacity})` as ZRColor;
+}
+
+/**
+ * Excel序列号转JS日期
+ * @param serial
+ * @returns
+ */
+export function excelDateToJSDate(serial: number | string) {
+  // 异常值处理，部分日期不是严格的excel数字，而是'2025-01-01 00:00:00'这种格式
+  if (typeof serial === 'string') {
+    return new Date(serial);
+  }
+  // Excel序列号转JS日期
+  const utc_days = Math.floor(serial - 25569);
+  const utc_value = utc_days * 86400; // 86400秒/天
+  const date_info = new Date(utc_value * 1000);
+
+  // 处理小数部分（时间）
+  const fractional_day = serial - Math.floor(serial) + 0.0000001;
+  let total_seconds = Math.floor(86400 * fractional_day);
+
+  const seconds = total_seconds % 60;
+  total_seconds -= seconds;
+
+  const hours = Math.floor(total_seconds / (60 * 60));
+  const minutes = Math.floor(total_seconds / 60) % 60;
+
+  date_info.setHours(hours);
+  date_info.setMinutes(minutes);
+  date_info.setSeconds(seconds);
+
+  return date_info;
+}
+
+/**
+ * 格式化数字，保留2位小数
+ */
+export function formatNumber(num: number): number {
+  return Number(num.toFixed(2));
+}
+
+/**
+ * 获取月份键值
+ */
+export function getMonthKey(date: Date): string {
+  return `${date.getFullYear()}-${(date.getMonth() + 1)
+    .toString()
+    .padStart(2, '0')}`;
 }

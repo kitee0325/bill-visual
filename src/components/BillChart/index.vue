@@ -1,20 +1,48 @@
 <script setup lang="ts">
 import * as echarts from 'echarts';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ElButton, ElSlider } from 'element-plus';
 
-import { processBillData } from './handleData';
 import { getChartOption } from './chartOption';
+import { getNiceInterval } from './chartOption/inner';
+import { getFilteredBillData, processBillData } from './handleData';
 
 const props = defineProps<{ billData: any[][] }>();
-const { monthStatistics, colorMap, categoryRank, categoryDiff, tradeMinMax } =
-  processBillData(props.billData);
-
-const monthList = Object.keys(monthStatistics).sort(
-  (a, b) => Number(a) - Number(b)
-);
+const {
+  records,
+  tradeMinMax: globalTradeMinMax,
+  monthList,
+  colorMap,
+} = processBillData(props.billData);
 
 const monthIndex = ref(0);
-const month = computed(() => monthList[monthIndex.value]);
+const niceIncRange = getNiceInterval(globalTradeMinMax.income);
+const niceExpRange = getNiceInterval(globalTradeMinMax.expense);
+
+// 收入和支出的范围
+const incomeRange = ref([
+  niceIncRange[0],
+  niceIncRange[niceIncRange.length - 1],
+]);
+const expenseRange = ref([
+  niceExpRange[0],
+  niceExpRange[niceExpRange.length - 1],
+]);
+
+// 生成marks
+const incomeMarks = computed(() => {
+  return niceIncRange.reduce((acc, val) => {
+    acc[val] = `${val}元`;
+    return acc;
+  }, {} as Record<number, string>);
+});
+
+const expenseMarks = computed(() => {
+  return niceExpRange.reduce((acc, val) => {
+    acc[val] = `${val}元`;
+    return acc;
+  }, {} as Record<number, string>);
+});
 
 const chartRef = ref<HTMLDivElement | null>(null);
 let chartInstance: echarts.ECharts | null = null;
@@ -26,11 +54,29 @@ function updateChart() {
   }
   if (!chartInstance) return;
 
-  const chartOption = getChartOption(
-    monthStatistics[month.value],
-    categoryDiff[monthIndex.value],
-    { colorMap, categoryRank, tradeMinMax }
+  // 获取数据
+  const {
+    monthStatistic,
+    categoryRank,
+    categoryDiff,
+    tradeMinMax,
+    monthlyTradeMinMax,
+  } = getFilteredBillData(
+    records,
+    {
+      income: { min: incomeRange.value[0], max: incomeRange.value[1] },
+      expense: { min: expenseRange.value[0], max: expenseRange.value[1] },
+    },
+    monthList,
+    monthIndex.value
   );
+
+  const chartOption = getChartOption(monthStatistic, categoryDiff, {
+    colorMap,
+    categoryRank,
+    tradeMinMax,
+    monthlyTradeMinMax,
+  });
   chartInstance.setOption(chartOption, {
     notMerge: true,
   });
@@ -40,6 +86,7 @@ function updateChart() {
 onMounted(() => {
   updateChart();
 });
+
 onUnmounted(() => {
   if (chartInstance) {
     chartInstance.dispose();
@@ -47,10 +94,14 @@ onUnmounted(() => {
   }
 });
 
-// month变化时自动更新图表
-watch(month, () => {
+// 监听月份变化
+watch(monthIndex, () => {
   updateChart();
 });
+
+function handleRangeChange() {
+  updateChart();
+}
 
 const goPrevMonth = () => {
   if (monthIndex.value > 0) monthIndex.value--;
@@ -63,22 +114,48 @@ const goNextMonth = () => {
 <template>
   <div class="bill-chart-container">
     <div class="bill-chart-header">
-      <div class="chart-title">{{ month }}月份收支详情</div>
+      <div class="chart-title">{{ monthList[monthIndex] }}收支详情</div>
+      <div class="filter-group">
+        <div class="filter-item">
+          <div class="filter-label">收入范围</div>
+          <el-slider
+            v-model="incomeRange"
+            range
+            :min="niceIncRange[0]"
+            :max="niceIncRange[niceIncRange.length - 1]"
+            :step="100"
+            :marks="incomeMarks"
+            @change="handleRangeChange"
+          />
+        </div>
+        <div class="filter-item">
+          <div class="filter-label">支出范围</div>
+          <el-slider
+            v-model="expenseRange"
+            range
+            :min="niceExpRange[0]"
+            :max="niceExpRange[niceExpRange.length - 1]"
+            :step="100"
+            :marks="expenseMarks"
+            @change="handleRangeChange"
+          />
+        </div>
+      </div>
       <div class="button-group">
-        <button
-          class="nav-btn"
+        <el-button
           :disabled="monthIndex === 0"
           @click="goPrevMonth"
+          type="primary"
         >
           上一月
-        </button>
-        <button
-          class="nav-btn"
+        </el-button>
+        <el-button
           :disabled="monthIndex === monthList.length - 1"
           @click="goNextMonth"
+          type="primary"
         >
           下一月
-        </button>
+        </el-button>
       </div>
     </div>
     <div class="bill-chart" ref="chartRef"></div>
@@ -86,11 +163,6 @@ const goNextMonth = () => {
 </template>
 
 <style scoped lang="scss">
-$primary-color: #1976d2;
-$primary-hover: #1565c0;
-$disabled-bg: #e4e6eb;
-$disabled-color: #aaa;
-
 .bill-chart-container {
   width: 100%;
   height: 100vh;
@@ -105,33 +177,26 @@ $disabled-color: #aaa;
   padding: 32px 24px 16px 24px;
   background: #fff;
 }
+.filter-group {
+  width: 100%;
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin: 24px 0;
+}
+.filter-item {
+  width: 100%;
+}
+.filter-label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
 .button-group {
   display: flex;
   gap: 12px;
   margin-top: 12px;
-}
-.nav-btn {
-  background: $primary-color;
-  border: none;
-  border-radius: 6px;
-  padding: 8px 20px;
-  font-size: 16px;
-  color: #fff;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-  font-weight: 500;
-}
-.nav-btn:disabled {
-  background: $disabled-bg;
-  color: $disabled-color;
-  cursor: not-allowed;
-  border: 1px solid #d0d0d0;
-  opacity: 1;
-}
-.nav-btn:not(:disabled):hover {
-  background: $primary-hover;
-  color: #fff;
 }
 .chart-title {
   font-size: 22px;

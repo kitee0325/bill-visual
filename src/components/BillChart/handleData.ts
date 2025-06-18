@@ -1,3 +1,9 @@
+import {
+  excelDateToJSDate,
+  formatNumber,
+  getMonthKey,
+} from './chartOption/util';
+
 export interface BillRecord {
   // 交易时间
   tradeTime: Date;
@@ -37,35 +43,21 @@ export type TradeMinMax = Record<
 >;
 
 /**
- * Excel序列号转JS日期
- * @param serial
- * @returns
+ * 按收入支出分类统计
  */
-function excelDateToJSDate(serial: number | string) {
-  // 异常值处理，部分日期不是严格的excel数字，而是'2025-01-01 00:00:00'这种格式
-  if (typeof serial === 'string') {
-    return new Date(serial);
-  }
-  // Excel序列号转JS日期
-  const utc_days = Math.floor(serial - 25569);
-  const utc_value = utc_days * 86400; // 86400秒/天
-  const date_info = new Date(utc_value * 1000);
-
-  // 处理小数部分（时间）
-  const fractional_day = serial - Math.floor(serial) + 0.0000001;
-  let total_seconds = Math.floor(86400 * fractional_day);
-
-  const seconds = total_seconds % 60;
-  total_seconds -= seconds;
-
-  const hours = Math.floor(total_seconds / (60 * 60));
-  const minutes = Math.floor(total_seconds / 60) % 60;
-
-  date_info.setHours(hours);
-  date_info.setMinutes(minutes);
-  date_info.setSeconds(seconds);
-
-  return date_info;
+function groupByIncomeExpense<
+  T extends { incomeOrExpense: string; amount: number }
+>(
+  records: T[],
+  callback: (type: 'income' | 'expense', amount: number) => void
+) {
+  records.forEach((record) => {
+    if (record.incomeOrExpense === '收入') {
+      callback('income', record.amount);
+    } else if (record.incomeOrExpense === '支出') {
+      callback('expense', record.amount);
+    }
+  });
 }
 
 /**
@@ -117,14 +109,14 @@ export function parseBillData(data: any[][]): BillRecord[] {
     const record: BillRecord = {
       id: crypto.randomUUID(),
       tradeTime: excelDateToJSDate(tradeTime),
-      tradeCategory: tradeCategory,
-      counterparty: counterparty,
-      counterpartyAccount: counterpartyAccount,
-      description: description,
-      incomeOrExpense: incomeOrExpense,
-      amount: Number(Number(amount).toFixed(2)),
-      paymentMethod: paymentMethod,
-      tradeStatus: tradeStatus,
+      tradeCategory,
+      counterparty,
+      counterpartyAccount,
+      description,
+      incomeOrExpense,
+      amount: formatNumber(Number(amount)),
+      paymentMethod,
+      tradeStatus,
       tradeOrderId: tradeOrderId || -1,
       merchantOrderId: merchantOrderId || -1,
       remark: remark || '',
@@ -139,39 +131,69 @@ export function parseBillData(data: any[][]): BillRecord[] {
   return records;
 }
 
-/** 计算全周期中，支出和收入的极值
+/** 计算全周期中，单笔交易支出和收入的极值
  *
  */
 export function getTradeMinMax(records: BillRecord[]): TradeMinMax {
-  const income = records
-    .filter((r) => r.incomeOrExpense === '收入')
-    .map((r) => r.amount);
-  const expense = records
-    .filter((r) => r.incomeOrExpense === '支出')
-    .map((r) => r.amount);
-  return {
-    income: {
-      min: Math.min(...income),
-      max: Math.max(...income),
-    },
-    expense: {
-      min: Math.min(...expense),
-      max: Math.max(...expense),
-    },
+  const result: TradeMinMax = {
+    income: { min: Infinity, max: -Infinity },
+    expense: { min: Infinity, max: -Infinity },
   };
-}
 
-export function groupDataByMonth(records: BillRecord[]) {
-  const monthStatistics: Record<string, BillRecord[]> = {};
-  records.forEach((record) => {
-    const month = record.tradeTime.getMonth() + 1;
-    if (!monthStatistics[month]) {
-      monthStatistics[month] = [];
-    }
-    monthStatistics[month].push(record);
+  groupByIncomeExpense(records, (type, amount) => {
+    result[type].min = Math.min(result[type].min, amount);
+    result[type].max = Math.max(result[type].max, amount);
   });
 
-  return monthStatistics;
+  return result;
+}
+
+/** 计算全周期中，按类型，每月累计收支的极值
+ *
+ */
+export function getMonthlyTradeMinMax(
+  incomeStatistics: Record<string, number>[],
+  expenseStatistics: Record<string, number>[]
+) {
+  const result: TradeMinMax = {
+    income: { min: Infinity, max: -Infinity },
+    expense: { min: Infinity, max: -Infinity },
+  };
+
+  incomeStatistics.forEach((income) => {
+    Object.values(income).forEach((value) => {
+      result.income.min = Math.min(result.income.min, value);
+      result.income.max = Math.max(result.income.max, value);
+    });
+  });
+
+  expenseStatistics.forEach((expense) => {
+    Object.values(expense).forEach((value) => {
+      result.expense.min = Math.min(result.expense.min, value);
+      result.expense.max = Math.max(result.expense.max, value);
+    });
+  });
+
+  return result;
+}
+
+/** 按月份分组
+ *
+ */
+export function groupDataByMonth(records: BillRecord[], monthList: string[]) {
+  const result: Record<string, BillRecord[]> = {};
+
+  records.forEach((record) => {
+    const monthKey = getMonthKey(record.tradeTime);
+    if (monthList.includes(monthKey)) {
+      if (!result[monthKey]) {
+        result[monthKey] = [];
+      }
+      result[monthKey].push(record);
+    }
+  });
+
+  return result;
 }
 
 // 统计收入和支出类别的总金额，并按金额从大到小排序，返回类别名称数组
@@ -180,11 +202,15 @@ export function getSortedCategoriesByAmount(records: BillRecord[]) {
   const expenseMap: Record<string, number> = {};
 
   records.forEach((record) => {
-    const category = record.tradeCategory;
-    if (record.incomeOrExpense === '收入') {
-      incomeMap[category] = (incomeMap[category] || 0) + record.amount;
-    } else if (record.incomeOrExpense === '支出') {
-      expenseMap[category] = (expenseMap[category] || 0) + record.amount;
+    const { tradeCategory, amount, incomeOrExpense } = record;
+    if (incomeOrExpense === '收入') {
+      incomeMap[tradeCategory] = formatNumber(
+        (incomeMap[tradeCategory] || 0) + amount
+      );
+    } else if (incomeOrExpense === '支出') {
+      expenseMap[tradeCategory] = formatNumber(
+        (expenseMap[tradeCategory] || 0) + amount
+      );
     }
   });
 
@@ -234,35 +260,31 @@ export function getCategoriesDiff(
   records: Record<string, BillRecord[]>,
   categories: { income: string[]; expense: string[] }
 ) {
+  const { income, expense } = categories;
   const incomeStatistics: Record<string, number>[] = [];
   const expenseStatistics: Record<string, number>[] = [];
-  const { income, expense } = categories;
 
   Object.values(records).forEach((monthRecords) => {
-    const monthIncomeStatistics: Record<string, number> = income.reduce(
-      (acc, d) => {
-        acc[d] = 0;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-    const monthExpenseStatistics: Record<string, number> = expense.reduce(
-      (acc, d) => {
-        acc[d] = 0;
-        return acc;
-      },
-      {} as Record<string, number>
+    const monthIncomeStatistics = Object.fromEntries(income.map((d) => [d, 0]));
+    const monthExpenseStatistics = Object.fromEntries(
+      expense.map((d) => [d, 0])
     );
 
     monthRecords.forEach((record) => {
-      const category = record.tradeCategory;
-      if (record.incomeOrExpense === '收入') {
-        monthIncomeStatistics[category] = Number(
-          (monthIncomeStatistics[category] + record.amount).toFixed(2)
+      const { tradeCategory, amount, incomeOrExpense } = record;
+      if (
+        incomeOrExpense === '收入' &&
+        monthIncomeStatistics[tradeCategory] !== undefined
+      ) {
+        monthIncomeStatistics[tradeCategory] = formatNumber(
+          monthIncomeStatistics[tradeCategory] + amount
         );
-      } else {
-        monthExpenseStatistics[category] = Number(
-          (monthExpenseStatistics[category] + record.amount).toFixed(2)
+      } else if (
+        incomeOrExpense === '支出' &&
+        monthExpenseStatistics[tradeCategory] !== undefined
+      ) {
+        monthExpenseStatistics[tradeCategory] = formatNumber(
+          monthExpenseStatistics[tradeCategory] + amount
         );
       }
     });
@@ -274,26 +296,28 @@ export function getCategoriesDiff(
   // 计算环差
   function calculateDiff(statistics: Record<string, number>[]): CategoryDiff[] {
     return statistics.map((monthData, i) => {
-      return Object.keys(monthData).reduce((acc, d) => {
+      return Object.keys(monthData).reduce((acc, category) => {
         const lastValue = statistics[i - 1]
-          ? Number(statistics[i - 1][d].toFixed(2))
+          ? formatNumber(statistics[i - 1][category])
           : 0;
-        const currentValue = Number(monthData[d].toFixed(2));
-        let diff =
-          lastValue === 0 ? 0 : Number((currentValue - lastValue).toFixed(2));
+        const currentValue = formatNumber(monthData[category]);
+        let diff = lastValue === 0 ? 0 : formatNumber(currentValue - lastValue);
 
         // 如果差值小于10元或差值占值的比例小于5%，则认为差值为0
-        if (Math.abs(diff) < 10 || Math.abs(diff) / currentValue < 0.05) {
+        if (
+          Math.abs(diff) < 10 ||
+          (currentValue !== 0 && Math.abs(diff) / currentValue < 0.05)
+        ) {
           diff = 0;
         }
 
-        acc[d] = {
-          increase: diff > 0 ? Number(diff.toFixed(2)) : 0,
-          decrease: diff < 0 ? Number((-diff).toFixed(2)) : 0,
+        acc[category] = {
+          increase: diff > 0 ? formatNumber(diff) : 0,
+          decrease: diff < 0 ? formatNumber(-diff) : 0,
           value:
             diff > 0
-              ? Number((currentValue - diff).toFixed(2))
-              : Number(currentValue.toFixed(2)),
+              ? formatNumber(currentValue - diff)
+              : formatNumber(currentValue),
         };
         return acc;
       }, {} as CategoryDiff);
@@ -303,37 +327,82 @@ export function getCategoriesDiff(
   const incomeDiff = calculateDiff(incomeStatistics);
   const expenseDiff = calculateDiff(expenseStatistics);
 
-  const result = [];
-  for (let i = 0; i < incomeDiff.length; i++) {
-    result.push({
-      income: incomeDiff[i],
-      expense: expenseDiff[i],
-    });
-  }
+  const categoryDiff = incomeDiff.map((income, i) => ({
+    income,
+    expense: expenseDiff[i],
+  }));
 
-  return result;
+  return {
+    incomeStatistics,
+    expenseStatistics,
+    categoryDiff,
+  };
+}
+
+export function getMonthList(records: BillRecord[]) {
+  const monthSet = new Set(records.map((r) => getMonthKey(r.tradeTime)));
+  return Array.from(monthSet).sort((a, b) => a.localeCompare(b));
 }
 
 export function processBillData(billData: any[][]) {
   // 全周期数据处理
   const records = parseBillData(billData);
-  // 计算全周期中，支出和收入的极值
+  // 计算全周期中，单笔支出和收入的极值
   const tradeMinMax = getTradeMinMax(records);
+  // 获取月份统计
+  const monthList = getMonthList(records);
   // 类别统计
   const categoryRank = getSortedCategoriesByAmount(records);
   // 类别颜色映射
   const colorMap = getCategoryColorMap(categoryRank);
-  // 数据分期
-  const monthStatistics = groupDataByMonth(records);
-  // 计算环差
-  const categoryDiff = getCategoriesDiff(monthStatistics, categoryRank);
 
   return {
     records,
-    monthStatistics,
-    categoryRank,
+    tradeMinMax,
+    monthList,
     colorMap,
+  };
+}
+
+export function getFilteredBillData(
+  records: BillRecord[],
+  range: TradeMinMax,
+  monthList: string[],
+  monthIndex = 0
+) {
+  const { income, expense } = range;
+  const filteredRecords = records.filter((r) => {
+    const { min, max } = r.incomeOrExpense === '收入' ? income : expense;
+    return r.amount >= min && r.amount <= max;
+  });
+
+  // 计算全周期中，单笔支出和收入的极值
+  const tradeMinMax = getTradeMinMax(filteredRecords);
+  // 类别统计
+  const categoryRank = getSortedCategoriesByAmount(filteredRecords);
+  // 数据分期
+  const statisticGroupByMonth = groupDataByMonth(filteredRecords, monthList);
+  // 计算环差
+  const {
+    incomeStatistics,
+    expenseStatistics,
+    categoryDiff: categoryDiffArr,
+  } = getCategoriesDiff(statisticGroupByMonth, categoryRank);
+  // 根据statistic计算全周期，各类型按月累计的最值
+  const monthlyTradeMinMax = getMonthlyTradeMinMax(
+    incomeStatistics,
+    expenseStatistics
+  );
+
+  // 获取当前月份的数据
+  const categoryDiff = categoryDiffArr[monthIndex];
+  const monthStatistic = statisticGroupByMonth[monthList[monthIndex]];
+
+  return {
+    monthStatistic,
+    categoryRank,
     categoryDiff,
     tradeMinMax,
+    monthlyTradeMinMax,
   };
 }

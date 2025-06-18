@@ -4,6 +4,7 @@ import type {
   RadiusAxisOption,
 } from 'echarts/types/dist/shared';
 import { type InnerData } from './inner';
+import { hexToRgba } from './util';
 
 export interface InnerChartOptions {
   isIncome: boolean;
@@ -51,6 +52,7 @@ function setSeriesData(data: number[], options: SetSeriesDataOptions) {
     const color = colorMap[category[i]];
 
     const itemStyle: BarSeriesOption['itemStyle'] = {
+      color: stackIndex === 2 ? hexToRgba(color, 0.5) : color,
       borderRadius: [
         stackIndex === 0 ? 5 : 0,
         isStackEnd ? 5 : 0,
@@ -58,10 +60,6 @@ function setSeriesData(data: number[], options: SetSeriesDataOptions) {
         isStackEnd ? 5 : 0,
       ],
     };
-
-    if (stackIndex === 0) {
-      itemStyle.color = color;
-    }
 
     let label: BarSeriesOption['label'] = {
       show: false,
@@ -166,7 +164,7 @@ export function createBasePolarOption(isIncome: boolean): EChartsOption {
         polarIndex,
         stack: `inner-${isIncome ? 'income' : 'expense'}`,
         itemStyle: {
-          color: '#ff7875',
+          // color: '#ff7875',
           borderWidth: 2,
           borderColor: '#000',
         },
@@ -179,7 +177,7 @@ export function createBasePolarOption(isIncome: boolean): EChartsOption {
         polarIndex,
         stack: `inner-${isIncome ? 'income' : 'expense'}`,
         itemStyle: {
-          color: '#d9f7be',
+          // color: '#d9f7be',
           borderWidth: 2,
           borderColor: '#000',
           borderType: 'dashed',

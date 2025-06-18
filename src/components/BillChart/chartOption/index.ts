@@ -20,10 +20,14 @@ export function getChartOption(
       expense: string[];
     };
     tradeMinMax: TradeMinMax;
+    monthlyTradeMinMax: TradeMinMax;
   }
 ) {
-  const { colorMap, categoryRank, tradeMinMax } = options;
-  const innerOption = getInnerOption(categoryDiff, { colorMap, tradeMinMax });
+  const { colorMap, categoryRank, tradeMinMax, monthlyTradeMinMax } = options;
+  const innerOption = getInnerOption(categoryDiff, {
+    colorMap,
+    tradeMinMax: monthlyTradeMinMax,
+  });
   const outerOption = getOuterOption(records, { categoryRank, colorMap });
   const scatterOption = getScatterOption(records, { colorMap, tradeMinMax });
   const tempOption = mergeObjectArrays(innerOption, outerOption);

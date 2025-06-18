@@ -58,6 +58,7 @@ function handleFiles(files: FileList | null | undefined) {
         header: 1,
       });
       successMsg.value = `上传成功：${file.name}`;
+      console.log(jsonData);
       emit('finish', jsonData);
     } catch (err: any) {
       errorMsg.value = err.message || '文件解析失败';
